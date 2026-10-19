@@ -1,0 +1,12 @@
+PartialEq to trait, który włącza operatory == i !=
+
+enum Option<T> {
+    None,
+    Some(T),
+} // wtedy kompilator wymusza obsluge przypadku Null
+
+usize - The pointer-sized unsigned integer type. Uzywany do indeksow i rozmiarow w pamieci.
+
+Clone - jawne kopiowanie
+Copy - ciche kopiowanie, np jako argument funkcji. Inty sa copy
+Copy wymaga Clone, Copy sie sklada z Copy

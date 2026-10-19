@@ -24,3 +24,11 @@ rustc-ice-*.txt
 #.idea/
 
 .DS_Store
+
+
+# Added by cargo
+
+/target
+
+.idea
+.vscode
