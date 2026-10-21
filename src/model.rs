@@ -71,3 +71,54 @@ pub struct Scene {
     pub polygons: Vec<Polygon>,
     pub constraints: Vec<Constraint>,
 }
+
+impl Scene {
+    pub fn demo() -> Scene {
+        let p1 = Point{x: 1.0, y: 0.0};
+        let p2 = Point{x: 1.0, y: 1.0};
+        let p3 = Point{x: 0.0, y: 0.0};
+
+        let v1 = Vertex {
+            pos: p1,
+            kind: None
+        };
+
+        let v2 = Vertex {
+            pos: p2,
+            kind: None
+        };
+
+        let v3 = Vertex {
+            pos: p3,
+            kind: None
+        };
+
+        let e1 = Edge {
+            kind: EdgeKind::Line { len: None },
+            p1: 0,
+            p2: 1,
+        };
+
+        let e2 = Edge {
+            kind: EdgeKind::Line { len: None },
+            p1: 1,
+            p2: 2,
+        };
+
+        let e3 = Edge {
+            kind: EdgeKind::Line { len: None },
+            p1: 2,
+            p2: 0,
+        };
+
+        let triangle = Polygon {
+            vertices: vec![v1, v2, v3],
+            edges: vec![e1, e2, e3],
+        };
+
+        Scene {
+            polygons: vec![triangle],
+            constraints: vec![],
+        }
+    }
+}

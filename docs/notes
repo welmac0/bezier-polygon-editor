@@ -10,3 +10,8 @@ usize - The pointer-sized unsigned integer type. Uzywany do indeksow i rozmiarow
 Clone - jawne kopiowanie
 Copy - ciche kopiowanie, np jako argument funkcji. Inty sa copy
 Copy wymaga Clone, Copy sie sklada z Copy
+
+
+obiekt.metoda() <=> struct::metoda(&obiekt)
+
+
