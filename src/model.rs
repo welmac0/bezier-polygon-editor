@@ -73,51 +73,111 @@ pub struct Scene {
 }
 
 impl Scene {
+    // AI-gen (podział na get_triangle i get_square)
     pub fn demo() -> Scene {
-        let p1 = Point{x: 1.0, y: 0.0};
-        let p2 = Point{x: 1.0, y: 1.0};
-        let p3 = Point{x: 0.0, y: 0.0};
+        // funkcje wewnętrzne: widoczne tylko w środku demo()
+        fn get_triangle() -> Polygon {
+            let p1 = Point{x: 200.0, y: 100.0};
+            let p2 = Point{x: 400.0, y: 300.0};
+            let p3 = Point{x: 100.0, y: 300.0};
 
-        let v1 = Vertex {
-            pos: p1,
-            kind: None
-        };
+            let v1 = Vertex {
+                pos: p1,
+                kind: None
+            };
 
-        let v2 = Vertex {
-            pos: p2,
-            kind: None
-        };
+            let v2 = Vertex {
+                pos: p2,
+                kind: None
+            };
 
-        let v3 = Vertex {
-            pos: p3,
-            kind: None
-        };
+            let v3 = Vertex {
+                pos: p3,
+                kind: None
+            };
 
-        let e1 = Edge {
-            kind: EdgeKind::Line { len: None },
-            p1: 0,
-            p2: 1,
-        };
+            let e1 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 0,
+                p2: 1,
+            };
 
-        let e2 = Edge {
-            kind: EdgeKind::Line { len: None },
-            p1: 1,
-            p2: 2,
-        };
+            let e2 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 1,
+                p2: 2,
+            };
 
-        let e3 = Edge {
-            kind: EdgeKind::Line { len: None },
-            p1: 2,
-            p2: 0,
-        };
+            let e3 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 2,
+                p2: 0,
+            };
 
-        let triangle = Polygon {
-            vertices: vec![v1, v2, v3],
-            edges: vec![e1, e2, e3],
-        };
+            Polygon {
+                vertices: vec![v1, v2, v3],
+                edges: vec![e1, e2, e3],
+            }
+        }
+
+        fn get_square() -> Polygon {
+            let p1 = Point{x: 550.0, y: 150.0};
+            let p2 = Point{x: 750.0, y: 150.0};
+            let p3 = Point{x: 750.0, y: 350.0};
+            let p4 = Point{x: 550.0, y: 350.0};
+
+            let v1 = Vertex {
+                pos: p1,
+                kind: None
+            };
+
+            let v2 = Vertex {
+                pos: p2,
+                kind: None
+            };
+
+            let v3 = Vertex {
+                pos: p3,
+                kind: None
+            };
+
+            let v4 = Vertex {
+                pos: p4,
+                kind: None
+            };
+
+            let e1 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 0,
+                p2: 1,
+            };
+
+            let e2 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 1,
+                p2: 2,
+            };
+
+            let e3 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 2,
+                p2: 3,
+            };
+
+            let e4 = Edge {
+                kind: EdgeKind::Line { len: None },
+                p1: 3,
+                p2: 0,
+            };
+
+            Polygon {
+                vertices: vec![v1, v2, v3, v4],
+                edges: vec![e1, e2, e3, e4],
+            }
+        }
 
         Scene {
-            polygons: vec![triangle],
+            polygons: vec![get_triangle(), get_square()],
             constraints: vec![],
         }
     }
