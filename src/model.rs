@@ -28,6 +28,53 @@ pub struct Point {
     pub y: f64,
 }
 
+// AI-gen
+// Odległość punktu P od odcinka AB (do trafiania myszą w krawędź).
+//
+// Narzędzia:
+// - wektor między punktami: AB = B - A
+// - iloczyn skalarny: u·v = u.x*v.x + u.y*v.y
+//   (AP·AB / |AB| = długość "cienia" AP na kierunku AB)
+// - rzut prostopadły P na prostą AB: Q = A + t*AB, gdzie t = (AP·AB) / |AB|²
+//   (t = 0 -> A, t = 1 -> B, t = 0.5 -> środek)
+// - obcięcie t do [0, 1], żeby Q nie wyszło poza odcinek
+//   (inaczej mierzylibyśmy odległość od nieskończonej prostej)
+// - odległość euklidesowa (Pitagoras): |PQ| = sqrt(dx² + dy²)
+//
+// Przykłady do sprawdzenia:
+// A=(0,0) B=(10,0) P=(3,4)  -> t=0.3,          wynik 4
+// A=(0,0) B=(4,4)  P=(0,4)  -> t=0.5, Q=(2,2), wynik ~2.83
+// A=(0,0) B=(10,0) P=(15,2) -> t=1.5 -> 1, Q=B, wynik ~5.39
+pub fn dist_point_segment(p: Point, a: Point, b: Point) -> f64 {
+    // 1. wektor krawędzi AB i wektor do kliknięcia AP
+    let abx = b.x - a.x;
+    let aby = b.y - a.y;
+    let apx = p.x - a.x;
+    let apy = p.y - a.y;
+
+    // 2. |AB|²; gdy A = B, odcinek to punkt -> odległość P-A (bez dzielenia przez 0)
+    let len2 = abx * abx + aby * aby;
+    if len2 == 0.0 {
+        return (apx * apx + apy * apy).sqrt();
+    }
+
+    // 3. parametr rzutu i obcięcie do odcinka
+    let mut t = (apx * abx + apy * aby) / len2;
+    if t < 0.0 {
+        t = 0.0;
+    }
+    if t > 1.0 {
+        t = 1.0;
+    }
+
+    // 4. najbliższy punkt odcinka Q i odległość P-Q
+    let qx = a.x + t * abx;
+    let qy = a.y + t * aby;
+    let dx = p.x - qx;
+    let dy = p.y - qy;
+    (dx * dx + dy * dy).sqrt()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PointKind { // punkt laczenia krawedzi i jego typ
     G0,
@@ -180,5 +227,63 @@ impl Scene {
             polygons: vec![get_triangle(), get_square()],
             constraints: vec![],
         }
+    }
+
+    // AI-gen: pierwszy wierzchołek bliżej niż `radius` od p -> (indeks wielokąta, indeks wierzchołka)
+    pub fn find_vertex(&self, p: Point, radius: f64) -> Option<(usize, usize)> {
+        for i in 0..self.polygons.len() {
+            for j in 0..self.polygons[i].vertices.len() {
+                let v = self.polygons[i].vertices[j].pos;
+                let dx = v.x - p.x;
+                let dy = v.y - p.y;
+                if dx * dx + dy * dy <= radius * radius {
+                    return Some((i, j));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn find_edge(&self, p: Point, radius: f64) -> Option<EdgeRef> {
+        for i in 0..self.polygons.len() {
+            for j in 0..self.polygons[i].edges.len() {
+                let (a, b) = self.polygons[i].edge_points(j);
+                let dist = dist_point_segment(p, a, b);
+                if dist <= radius {
+                    return Some(EdgeRef { polygon: i, edge: j }); // return konczy natychmiast
+                }
+            }
+        }
+        None
+    }
+
+    pub fn insert_vertex(&mut self, e: EdgeRef) {
+        // niezmiennik: e_k = v_k~v_k+1 np. e_0 = v_0~v_1
+    }
+
+}
+
+impl Polygon {
+    // AI-gen: przesuwa cały wielokąt (wierzchołki i punkty kontrolne Béziera)
+    pub fn translate(&mut self, dx: f64, dy: f64) {
+        for vertex in &mut self.vertices {
+            vertex.pos.x += dx;
+            vertex.pos.y += dy;
+        }
+        for edge in &mut self.edges {
+            if let EdgeKind::Bezier { c1, c2 } = &mut edge.kind {
+                c1.x += dx;
+                c1.y += dy;
+                c2.x += dx;
+                c2.y += dy;
+            }
+        }
+    }
+
+    pub fn edge_points(&self, edge: usize) -> (Point, Point) {
+        let e = &self.edges[edge];
+        let a = self.vertices[e.p1];
+        let b = self.vertices[e.p2];
+        (a.pos, b.pos)
     }
 }
