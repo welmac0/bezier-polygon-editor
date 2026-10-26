@@ -112,7 +112,6 @@ impl Raster {
         ];
         let color32 = egui::Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
         painter.line_segment(points, egui::Stroke::new(1.0, color32));
-        // auto dereferncing
     }
 
     // AI-gen (poprawione indeksy pętli)

@@ -1,5 +1,5 @@
+use crate::algorithms::dist_point_segment;
 use crate::model::EdgeKind::Line;
-use crate::model::PointKind::G0;
 
 // rodzaj ksztaltu
 #[derive(Clone, Debug)]
@@ -31,52 +31,7 @@ pub struct Point {
     pub y: f64,
 }
 
-// AI-gen
-// Odległość punktu P od odcinka AB (do trafiania myszą w krawędź).
-//
-// Narzędzia:
-// - wektor między punktami: AB = B - A
-// - iloczyn skalarny: u·v = u.x*v.x + u.y*v.y
-//   (AP·AB / |AB| = długość "cienia" AP na kierunku AB)
-// - rzut prostopadły P na prostą AB: Q = A + t*AB, gdzie t = (AP·AB) / |AB|²
-//   (t = 0 -> A, t = 1 -> B, t = 0.5 -> środek)
-// - obcięcie t do [0, 1], żeby Q nie wyszło poza odcinek
-//   (inaczej mierzylibyśmy odległość od nieskończonej prostej)
-// - odległość euklidesowa (Pitagoras): |PQ| = sqrt(dx² + dy²)
-//
-// Przykłady do sprawdzenia:
-// A=(0,0) B=(10,0) P=(3,4)  -> t=0.3,          wynik 4
-// A=(0,0) B=(4,4)  P=(0,4)  -> t=0.5, Q=(2,2), wynik ~2.83
-// A=(0,0) B=(10,0) P=(15,2) -> t=1.5 -> 1, Q=B, wynik ~5.39
-pub fn dist_point_segment(p: Point, a: Point, b: Point) -> f64 {
-    // 1. wektor krawędzi AB i wektor do kliknięcia AP
-    let abx = b.x - a.x;
-    let aby = b.y - a.y;
-    let apx = p.x - a.x;
-    let apy = p.y - a.y;
 
-    // 2. |AB|²; gdy A = B, odcinek to punkt -> odległość P-A (bez dzielenia przez 0)
-    let len2 = abx * abx + aby * aby;
-    if len2 == 0.0 {
-        return (apx * apx + apy * apy).sqrt();
-    }
-
-    // 3. parametr rzutu i obcięcie do odcinka
-    let mut t = (apx * abx + apy * aby) / len2;
-    if t < 0.0 {
-        t = 0.0;
-    }
-    if t > 1.0 {
-        t = 1.0;
-    }
-
-    // 4. najbliższy punkt odcinka Q i odległość P-Q
-    let qx = a.x + t * abx;
-    let qy = a.y + t * aby;
-    let dx = p.x - qx;
-    let dy = p.y - qy;
-    (dx * dx + dy * dy).sqrt()
-}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PointKind { // punkt laczenia krawedzi i jego typ
@@ -147,19 +102,19 @@ impl Scene {
             };
 
             let e1 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 0,
                 p2: 1,
             };
 
             let e2 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 1,
                 p2: 2,
             };
 
             let e3 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 2,
                 p2: 0,
             };
@@ -197,25 +152,25 @@ impl Scene {
             };
 
             let e1 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 0,
                 p2: 1,
             };
 
             let e2 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 1,
                 p2: 2,
             };
 
             let e3 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 2,
                 p2: 3,
             };
 
             let e4 = Edge {
-                kind: EdgeKind::Line { len: None },
+                kind: Line { len: None },
                 p1: 3,
                 p2: 0,
             };
@@ -271,9 +226,9 @@ impl Scene {
         let new_p = Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 };
         let new_v = Vertex { pos: new_p, kind: None };
         poly.vertices.insert(edge_id + 1, new_v);
-        poly.edges.insert(edge_id + 1, Edge { kind: EdgeKind::Line {len: None}, p1: 0, p2: 0 });
+        poly.edges.insert(edge_id + 1, Edge { kind: Line {len: None}, p1: 0, p2: 0 });
         // p1, p2 sa byle jakie
-        poly.edges[edge_id].kind = EdgeKind::Line {len: None}; // ze strony:
+        poly.edges[edge_id].kind = Line {len: None}; // ze strony:
         //  | dodanie wierzchołka na krawędzi lub usunięcie wierzchołka powinno powodować usunięcie
         //  | ograniczeń związanych z tą krawędzią oraz odpowiednią aktualizację relacji
         //  | krawędzi sąsiednich
@@ -301,7 +256,37 @@ impl Scene {
         // TODO: poprawić self.constraints (po ostatnim użyciu `poly`, stare numery krawędzi):
         //  - usunąć ograniczenia z krawędzią (polygon, prev) lub (polygon, vertex_id)
         //  - w pozostałych z tego wielokąta: edge > vertex_id -> edge - 1
+    }
 
+    pub fn set_bezier(&mut self, e_ref: EdgeRef) {
+        let (a, b) = self.polygons[e_ref.polygon].edge_points(e_ref.edge);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+
+        let len = (dx * dx + dy * dy).sqrt();
+        let nx = -dy / len * 40.0;
+        let ny = dx / len * 40.0;
+
+        // punkt = początek a + część krawędzi + odsunięcie w bok o 40 px
+        let c1 = Point { x: a.x + dx / 3.0 + nx, y: a.y + dy / 3.0 + ny };
+        let c2 = Point { x: a.x + 2.0 * dx / 3.0 + nx, y: a.y + 2.0 * dy / 3.0 + ny };
+
+        self.polygons[e_ref.polygon].edges[e_ref.edge].kind = EdgeKind::Bezier { c1, c2 };
+
+        // końce krawędzi bierzemy z samej krawędzi (dla ostatniej krawędzi p2 = 0)
+        let i1 = self.polygons[e_ref.polygon].edges[e_ref.edge].p1;
+        let i2 = self.polygons[e_ref.polygon].edges[e_ref.edge].p2;
+
+        // L–Z: domyślnie C1, ale nie nadpisujemy wyboru użytkownika
+        if self.polygons[e_ref.polygon].vertices[i1].kind == None {
+            self.polygons[e_ref.polygon].vertices[i1].kind = Some(PointKind::C1);
+        }
+        if self.polygons[e_ref.polygon].vertices[i2].kind == None {
+            self.polygons[e_ref.polygon].vertices[i2].kind = Some(PointKind::C1);
+        }
+    }
+    pub fn set_line(&mut self, e: EdgeRef) {
+        self.polygons[e.polygon].edges[e.edge].kind = Line { len: None };
     }
 
 }
@@ -337,4 +322,5 @@ impl Polygon {
         let b = self.vertices[e.p2];
         (a.pos, b.pos)
     }
+
 }
