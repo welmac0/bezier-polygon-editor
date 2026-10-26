@@ -154,6 +154,18 @@ impl MyApp {
             }
         }
 
+        if response.secondary_clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let p = screen_to_scene(pos, origin);
+                if let Some((pol_id, vertex_id)) = self.scene.find_vertex(p, VERTEX_RADIUS as f64) {
+                    self.scene.remove_vertex(pol_id, vertex_id);
+                } else if let Some(e_ref) = self.scene.find_edge(p, VERTEX_RADIUS as f64) {
+                self.scene.insert_vertex(e_ref)
+                }
+            }
+            self.dragged = None;
+        }
+
         // koniec przeciągania: puszczamy
         if response.drag_stopped() {
             self.dragged = None;

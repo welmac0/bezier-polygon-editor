@@ -1,3 +1,6 @@
+use crate::model::EdgeKind::Line;
+use crate::model::PointKind::G0;
+
 // rodzaj ksztaltu
 #[derive(Clone, Debug)]
 pub enum EdgeKind {
@@ -259,6 +262,46 @@ impl Scene {
 
     pub fn insert_vertex(&mut self, e: EdgeRef) {
         // niezmiennik: e_k = v_k~v_k+1 np. e_0 = v_0~v_1
+        let polygon_id = e.polygon;
+        let edge_id = e.edge;
+
+        let poly = &mut self.polygons[polygon_id];
+
+        let (a, b) = poly.edge_points(edge_id);
+        let new_p = Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 };
+        let new_v = Vertex { pos: new_p, kind: None };
+        poly.vertices.insert(edge_id + 1, new_v);
+        poly.edges.insert(edge_id + 1, Edge { kind: EdgeKind::Line {len: None}, p1: 0, p2: 0 });
+        // p1, p2 sa byle jakie
+        poly.edges[edge_id].kind = EdgeKind::Line {len: None}; // ze strony:
+        //  | dodanie wierzchołka na krawędzi lub usunięcie wierzchołka powinno powodować usunięcie
+        //  | ograniczeń związanych z tą krawędzią oraz odpowiednią aktualizację relacji
+        //  | krawędzi sąsiednich
+        poly.renumber_edges();
+
+        // TODO: poprawić self.constraints (po ostatnim użyciu `poly`):
+        //  - usunąć ograniczenia z krawędzią (polygon_id, edge_id)
+        //  - w pozostałych z tego wielokąta: edge > edge_id -> edge + 1
+    }
+
+    pub fn remove_vertex(&mut self, polygon: usize, vertex_id: usize) {
+        if self.polygons[polygon].vertices.len() <= 3 {
+            return;
+        }
+
+        let poly = &mut self.polygons[polygon];
+        let n = poly.vertices.len();
+        // krawedz e z niezmiennika: e=v_j~v_j+1
+        let prev = (vertex_id + n - 1) % n;
+        poly.edges[prev].kind = Line {len: None};
+        poly.vertices.remove(vertex_id);
+        poly.edges.remove(vertex_id);
+        poly.renumber_edges();
+
+        // TODO: poprawić self.constraints (po ostatnim użyciu `poly`, stare numery krawędzi):
+        //  - usunąć ograniczenia z krawędzią (polygon, prev) lub (polygon, vertex_id)
+        //  - w pozostałych z tego wielokąta: edge > vertex_id -> edge - 1
+
     }
 
 }
@@ -277,6 +320,14 @@ impl Polygon {
                 c2.x += dx;
                 c2.y += dy;
             }
+        }
+    }
+
+    pub fn renumber_edges(&mut self) {
+        let n = self.vertices.len();
+        for k in 0..n {
+            self.edges[k].p1 = k;
+            self.edges[k].p2 = (k + 1) % n;
         }
     }
 
