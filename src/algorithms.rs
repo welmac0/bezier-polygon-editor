@@ -89,3 +89,10 @@ pub fn dist_point_segment(p: Point, a: Point, b: Point) -> f64 {
     let dy = p.y - qy;
     (dx * dx + dy * dy).sqrt()
 }
+
+pub fn dist(a: Point, b: Point) -> f64 {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    (dx * dx + dy * dy).sqrt()
+}
+

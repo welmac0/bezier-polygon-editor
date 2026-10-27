@@ -1,4 +1,4 @@
-use crate::algorithms::dist_point_segment;
+use crate::algorithms::{dist, dist_point_segment};
 use crate::model::EdgeKind::Line;
 
 // rodzaj ksztaltu
@@ -60,6 +60,14 @@ pub struct EdgeRef {
     pub edge: usize,
 }
 
+// referencja do przeciaganai punktow kontrolnych Beziera, ktora jest zdefiniowana w
+// Edge::EdgeKind::Bezier{c1, c2}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PointRef {
+    Vertex { polygon: usize, vertex: usize },
+    Control {polygon: usize, edge: usize, which: u8}, // 1=c1, 2=c2
+}
+
 // Ograniczenia międzykrawędziowe żyją w scenie, bo przekraczają granice
 // wielokąta. Długość zostaje w Line (Twoja decyzja), więc tu na razie jest
 // jedna relacja. Enum zostawiam, żeby dało się dopisać kolejne warianty.
@@ -78,7 +86,48 @@ pub struct Scene {
 }
 
 impl Scene {
-    // AI-gen (podział na get_triangle i get_square)
+    pub fn find_point(&self, p: Point, radius: f64) -> Option<PointRef> {
+        for (polygon_index, polygon) in self.polygons.iter().enumerate() {
+            for (edge_index, edge) in polygon.edges.iter().enumerate() {
+                if let EdgeKind::Bezier { c1, c2 } = &edge.kind {
+                    if dist(p, *c1) < radius {
+                        return Some(PointRef::Control { polygon: polygon_index, edge: edge_index, which: 1 });
+                    }
+                    if dist(p, *c2) < radius {
+                        return Some(PointRef::Control { polygon: polygon_index, edge: edge_index, which: 2 });
+                    }
+                }
+            }
+        }
+        for (polygon_index, polygon) in self.polygons.iter().enumerate() {
+            for (vertex_index, vertex) in polygon.vertices.iter().enumerate() {
+                if dist(p, vertex.pos) < radius {
+                    return Some(PointRef::Vertex { polygon: polygon_index, vertex: vertex_index });
+                }
+            }
+        }
+        None
+    }
+    
+    pub fn move_point(&mut self, r: PointRef, p: Point) {
+        match r {
+            PointRef::Vertex { polygon, vertex } => {
+                self.polygons[polygon].vertices[vertex].pos = p;
+            }
+            // AI-gen: punkt kontrolny siedzi w krawędzi; &mut daje prawo do zmiany c1/c2
+            PointRef::Control { polygon, edge, which } => {
+                if let EdgeKind::Bezier { c1, c2 } = &mut self.polygons[polygon].edges[edge].kind {
+                    if which == 1 {
+                        *c1 = p;
+                    } else {
+                        *c2 = p;
+                    }
+                }
+            }
+        }
+    }
+    
+    
     pub fn demo() -> Scene {
         // funkcje wewnętrzne: widoczne tylko w środku demo()
         fn get_triangle() -> Polygon {

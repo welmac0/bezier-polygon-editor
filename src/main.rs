@@ -9,7 +9,7 @@ mod algorithms;
 use raster::Raster;
 use model::Scene;
 use crate::algorithms::bezier_points;
-use crate::model::{EdgeKind, EdgeRef, Polygon};
+use crate::model::{EdgeKind, EdgeRef, PointRef, Polygon};
 use crate::model::Point;
 
 const WIDTH: usize = 900;
@@ -27,7 +27,12 @@ enum DrawingAlg {
 
 // co aktualnie trzymamy myszą (indeksy, jak w EdgeRef)
 #[derive(Clone, Copy)] // AI-gen: pozwala skopiować wartość w `match self.dragged`
-enum Dragged { Vertex { polygon: usize, vertex: usize }, Polygon { polygon: usize } }
+enum Dragged {
+    Polygon {
+        polygon: usize
+    },
+    Point(PointRef),
+}
 
 fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -146,12 +151,18 @@ impl MyApp {
             if let Some(press) = ui.input(|i| i.pointer.press_origin()) {
                 let p = screen_to_scene(press, origin); // punkt klikniecia apki tlumaczony na punkt klikniecia na canvas
                 let shift = ui.input(|i| i.modifiers.shift); // klawisz shift
-                match self.scene.find_vertex(p, 2.0 * VERTEX_RADIUS as f64) {
-                    Some((polygon, vertex)) => {
-                        if shift {
-                            self.dragged = Some(Dragged::Polygon { polygon });
+                // AI-gen: find_point zamiast find_vertex (łapie też punkty kontrolne)
+                match self.scene.find_point(p, 2.0 * VERTEX_RADIUS as f64) {
+                    Some(r) => {
+                        if let PointRef::Vertex { polygon, .. } = r {
+                            if shift {
+                                // Shift + wierzchołek = cały wielokąt
+                                self.dragged = Some(Dragged::Polygon { polygon });
+                            } else {
+                                self.dragged = Some(Dragged::Point(r));
+                            }
                         } else {
-                            self.dragged = Some(Dragged::Vertex { polygon, vertex });
+                            self.dragged = Some(Dragged::Point(r));
                         }
                     }
                     None => self.dragged = None,
@@ -162,15 +173,14 @@ impl MyApp {
         // w trakcie przeciągania: przesuwamy to, co trzymamy
         if response.dragged() {
             match self.dragged {
-                Some(Dragged::Vertex { polygon, vertex }) => {
-                    // wierzchołek idzie DOKŁADNIE za kursorem
-                    if let Some(pos) = response.interact_pointer_pos() {
-                        self.scene.polygons[polygon].vertices[vertex].pos = screen_to_scene(pos, origin);
-                    }
-                }
                 Some(Dragged::Polygon { polygon }) => {
                     let d = response.drag_delta(); // ruch myszy od poprzedniej klatki
                     self.scene.polygons[polygon].translate(d.x as f64, d.y as f64);
+                }
+                Some(Dragged::Point(point)) => {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        self.scene.move_point(point, screen_to_scene(pos, origin));
+                    }
                 }
                 None => {}
             }
