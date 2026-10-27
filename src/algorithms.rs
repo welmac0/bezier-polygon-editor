@@ -96,3 +96,87 @@ pub fn dist(a: Point, b: Point) -> f64 {
     (dx * dx + dy * dy).sqrt()
 }
 
+
+// AI-finished
+// Punkty na okręgu o środku c i promieniu r: od kąta `start`, obrót o kąt `sweep`
+// (sweep > 0 -> kąt rośnie, sweep < 0 -> maleje), n kroków -> n + 1 punktów.
+fn circle_points(c: Point, r: f64, start: f64, sweep: f64, n: usize) -> Vec<Point> {
+    let mut pts = Vec::new();
+    for i in 0..=n {
+        let t = start + sweep * (i as f64) / (n as f64);
+        pts.push(Point { x: c.x + r * t.cos(), y: c.y + r * t.sin() });
+    }
+    pts
+}
+
+// AI-finished
+// Łuk przy G0 na obu końcach: półokrąg nad cięciwą AB.
+// Środek = środek AB, promień = |AB| / 2 (wymóg specyfikacji), flip wybiera stronę.
+pub fn arc_semicircle(a: Point, b: Point, flip: bool, n: usize) -> Vec<Point> {
+    let c = (a + b) * 0.5;
+    let r = dist(a, b) / 2.0;
+    let start = (a.y - c.y).atan2(a.x - c.x);
+    let sweep = if flip { -std::f64::consts::PI } else { std::f64::consts::PI };
+    let mut pts = circle_points(c, r, start, sweep, n);
+    let last = pts.len() - 1;
+    pts[last] = b; // dokładnie B, bez błędów zaokrągleń
+    pts
+}
+
+// AI-finished
+// Łuk przy G1 na początku: okrąg przez A i B, styczny w A do kierunku t.
+//
+// Geometria:
+// - środek leży na prostej przez A prostopadłej do t: C = A + s * n, gdzie n = t obrócone o 90°
+// - |C - A| = |C - B|  =>  s = |AB|² / (2 * (B - A)·n)
+// - kierunek obiegu: jeśli (A - C) x t > 0, idziemy w stronę rosnącego kąta, inaczej malejącego
+// - gdy B leży na prostej stycznej (mianownik ~ 0), okrąg byłby nieskończony -> odcinek AB
+pub fn arc_tangent_start(a: Point, b: Point, t: Point, n: usize) -> Vec<Point> {
+    let tl = t.length();
+    if tl < 1e-9 {
+        return vec![a, b];
+    }
+    let t = t * (1.0 / tl);
+    let nrm = t.perp();
+    let ab = b - a;
+    let denom = 2.0 * ab.dot(nrm);
+    if denom.abs() < 1e-9 {
+        return vec![a, b];
+    }
+    let s = ab.dot(ab) / denom;
+    let c = a + nrm * s;
+    let r = s.abs();
+
+    let ra = a - c;
+    let rb = b - c;
+    let start = ra.y.atan2(ra.x);
+    let end = rb.y.atan2(rb.x);
+    let ccw = ra.x * t.y - ra.y * t.x > 0.0; // iloczyn wektorowy (A - C) x t
+
+    let two_pi = 2.0 * std::f64::consts::PI;
+    let mut sweep = end - start;
+    if ccw {
+        while sweep <= 0.0 {
+            sweep += two_pi;
+        }
+    } else {
+        while sweep >= 0.0 {
+            sweep -= two_pi;
+        }
+    }
+
+    let mut pts = circle_points(c, r, start, sweep, n);
+    let last = pts.len() - 1;
+    pts[0] = a;
+    pts[last] = b;
+    pts
+}
+
+// AI-finished
+// Łuk przy G1 na końcu: dochodzimy do B w kierunku t.
+// To samo co łuk od B do A, który wychodzi z B w kierunku -t, tylko punkty w odwrotnej kolejności.
+pub fn arc_tangent_end(a: Point, b: Point, t: Point, n: usize) -> Vec<Point> {
+    let mut pts = arc_tangent_start(b, a, t * -1.0, n);
+    pts.reverse();
+    pts
+}

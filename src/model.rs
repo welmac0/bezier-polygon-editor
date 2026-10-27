@@ -1,4 +1,4 @@
-use crate::algorithms::{dist, dist_point_segment};
+use crate::algorithms::{arc_semicircle, arc_tangent_end, arc_tangent_start, bezier_points, dist, dist_point_segment};
 use crate::model::EdgeKind::Line;
 
 // rodzaj ksztaltu
@@ -12,8 +12,7 @@ pub enum EdgeKind {
         c2: Point
     },
     Arc {
-        flip: bool,
-
+        flip: bool, // po której stronie cięciwy leży półokrąg (tylko przy G0–G0)
     },
 }
 
@@ -29,6 +28,47 @@ pub struct Edge {
 pub struct Point {
     pub x: f64,
     pub y: f64,
+}
+
+// AI-finished: działania na punktach/wektorach, żeby wzory (solver, łuki) czytały się jak na kartce:
+// a + b, a - b, a * 2.0. Rust Book: rozdz. "Advanced Traits" -> przeciążanie operatorów.
+impl std::ops::Add for Point {
+    type Output = Point;
+    fn add(self, o: Point) -> Point {
+        Point { x: self.x + o.x, y: self.y + o.y }
+    }
+}
+
+impl std::ops::Sub for Point {
+    type Output = Point;
+    fn sub(self, o: Point) -> Point {
+        Point { x: self.x - o.x, y: self.y - o.y }
+    }
+}
+
+impl std::ops::Mul<f64> for Point {
+    type Output = Point;
+    fn mul(self, k: f64) -> Point {
+        Point { x: self.x * k, y: self.y * k }
+    }
+}
+
+// AI-finished
+impl Point {
+    // iloczyn skalarny
+    pub fn dot(self, o: Point) -> f64 {
+        self.x * o.x + self.y * o.y
+    }
+
+    // długość wektora
+    pub fn length(self) -> f64 {
+        self.dot(self).sqrt()
+    }
+
+    // wektor obrócony o 90 stopni (prostopadły)
+    pub fn perp(self) -> Point {
+        Point { x: -self.y, y: self.x }
+    }
 }
 
 
@@ -109,26 +149,123 @@ impl Scene {
         None
     }
     
+    // AI-finished: przesunięcie punktu myszą + pilnowanie ograniczeń i ciągłości (solver w constraints.rs)
     pub fn move_point(&mut self, r: PointRef, p: Point) {
-        match r {
-            PointRef::Vertex { polygon, vertex } => {
-                self.polygons[polygon].vertices[vertex].pos = p;
+        let backup = self.clone(); // stan sprzed ruchu, na wypadek porażki
+        let delta = p - self.get_point(r);
+        self.set_point(r, p);
+
+        // przesuwany wierzchołek zabiera ze sobą sąsiednie punkty kontrolne Béziera
+        // (dzięki temu kształt krzywej przy wierzchołku się nie psuje)
+        if let PointRef::Vertex { polygon, vertex } = r {
+            let n = self.polygons[polygon].vertices.len();
+            let prev = (vertex + n - 1) % n; // krawędź wchodząca do wierzchołka
+            if let EdgeKind::Bezier { c2, .. } = &mut self.polygons[polygon].edges[prev].kind {
+                *c2 = *c2 + delta;
             }
-            // AI-gen: punkt kontrolny siedzi w krawędzi; &mut daje prawo do zmiany c1/c2
-            PointRef::Control { polygon, edge, which } => {
-                if let EdgeKind::Bezier { c1, c2 } = &mut self.polygons[polygon].edges[edge].kind {
-                    if which == 1 {
-                        *c1 = p;
-                    } else {
-                        *c2 = p;
-                    }
-                }
+            if let EdgeKind::Bezier { c1, .. } = &mut self.polygons[polygon].edges[vertex].kind {
+                *c1 = *c1 + delta;
             }
+        }
+
+        // przesuwany punkt jest "zablokowany": solver dopasowuje resztę do niego
+        if self.solve(&[r]) {
+            return;
+        }
+
+        // nie da się spełnić ograniczeń -> cofamy ruch.
+        // Dla wierzchołka przesuwamy wtedy cały wielokąt: przesunięcie nie zmienia
+        // długości, kierunków ani ciągłości, więc wszystkie ograniczenia zostają spełnione,
+        // a wierzchołek dalej idzie za kursorem.
+        *self = backup;
+        if let PointRef::Vertex { polygon, .. } = r {
+            self.polygons[polygon].translate(delta.x, delta.y);
         }
     }
     
     
+    // AI-finished: scena początkowa
+    //  - wielokąt 0: 10 wierzchołków, dwa Béziery, dwa łuki, ciągłości G1/C1, dwie długości,
+    //                prostopadłość wewnątrz wielokąta
+    //  - wielokąt 1: trójkąt z prostopadłością do krawędzi wielokąta 0 (relacja między wielokątami)
+    // Nowy wielokąt = nowa funkcja get_...() z listą punktów + wpis w `polygons`.
     pub fn demo() -> Scene {
+        // funkcje wewnętrzne: widoczne tylko w środku demo()
+        fn p(x: f64, y: f64) -> Point {
+            Point { x, y }
+        }
+
+        // wielokąt z listy punktów: krawędź k łączy punkt k z (k + 1) % n, wszystkie to odcinki
+        fn polygon(points: &[Point]) -> Polygon {
+            let n = points.len();
+            let mut vertices = Vec::new();
+            let mut edges = Vec::new();
+            for k in 0..n {
+                vertices.push(Vertex { pos: points[k], kind: None });
+                edges.push(Edge { kind: Line { len: None }, p1: k, p2: (k + 1) % n });
+            }
+            Polygon { vertices, edges }
+        }
+
+        fn get_main_polygon() -> Polygon {
+            polygon(&[
+                p(225.0, 93.0),  // w0
+                p(322.0, 102.0), // w1
+                p(388.0, 238.0), // w2  C1
+                p(771.0, 219.0), // w3  G1
+                p(771.0, 411.0), // w4
+                p(731.0, 372.0), // w5  G1 (początek łuku)
+                p(635.0, 421.0), // w6
+                p(491.0, 353.0), // w7
+                p(358.0, 403.0), // w8  G1
+                p(94.0, 183.0),  // w9  C1
+            ])
+        }
+
+        fn get_triangle() -> Polygon {
+            polygon(&[p(520.0, 40.0), p(560.0, 146.0), p(640.0, 60.0)])
+        }
+
+        fn edge(polygon: usize, edge: usize) -> EdgeRef {
+            EdgeRef { polygon, edge }
+        }
+
+        let mut scene = Scene {
+            polygons: vec![get_main_polygon(), get_triangle()],
+            constraints: vec![],
+        };
+
+        // Béziery (punkty kontrolne jak na rysunku; ciągłość i tak je dopasuje)
+        scene.set_bezier(edge(0, 2));
+        scene.set_point(PointRef::Control { polygon: 0, edge: 2, which: 1 }, p(410.0, 281.0));
+        scene.set_point(PointRef::Control { polygon: 0, edge: 2, which: 2 }, p(771.0, 156.0));
+        scene.set_bezier(edge(0, 8));
+        scene.set_point(PointRef::Control { polygon: 0, edge: 8, which: 1 }, p(313.0, 420.0));
+        scene.set_point(PointRef::Control { polygon: 0, edge: 8, which: 2 }, p(51.0, 210.0));
+
+        // łuki: w5 -> w6 (G1 w w5, styczny do krawędzi w4 -> w5), w6 -> w7 (G0–G0, półokrąg)
+        scene.set_arc(edge(0, 5));
+        scene.set_arc(edge(0, 6));
+
+        // ciągłość w wierzchołkach
+        scene.set_vertex_kind(0, 2, PointKind::C1);
+        scene.set_vertex_kind(0, 3, PointKind::G1);
+        scene.set_vertex_kind(0, 5, PointKind::G1);
+        scene.set_vertex_kind(0, 8, PointKind::G1);
+        scene.set_vertex_kind(0, 9, PointKind::C1);
+
+        // ograniczenia
+        scene.set_length(edge(0, 0), 97.0);
+        scene.set_length(edge(0, 1), 151.0);
+        scene.add_perpendicular(edge(0, 3), edge(0, 0)); // pionowa w3–w4 ⊥ górna w0–w1
+        scene.add_perpendicular(edge(0, 7), edge(1, 0)); // między wielokątami
+
+        scene
+    }
+
+    // Legacy: poprzednia scena (trójkąt + kwadrat), nieużywana – zostawiona dla historii.
+    #[allow(dead_code)] // AI-finished: bez tego kompilator ostrzega, że funkcja nie jest wywoływana
+    pub fn demo_legacy() -> Scene {
         // funkcje wewnętrzne: widoczne tylko w środku demo()
         fn get_triangle() -> Polygon {
             let p1 = Point{x: 200.0, y: 100.0};
@@ -251,13 +388,16 @@ impl Scene {
         None
     }
 
+    // partly AI-finished: sprawdzamy łamaną krawędzi, więc trafia się też w Béziera i łuk
     pub fn find_edge(&self, p: Point, radius: f64) -> Option<EdgeRef> {
         for i in 0..self.polygons.len() {
             for j in 0..self.polygons[i].edges.len() {
-                let (a, b) = self.polygons[i].edge_points(j);
-                let dist = dist_point_segment(p, a, b);
-                if dist <= radius {
-                    return Some(EdgeRef { polygon: i, edge: j }); // return konczy natychmiast
+                let pts = self.polygons[i].edge_polyline(j, 50);
+                for k in 1..pts.len() {
+                    let dist = dist_point_segment(p, pts[k - 1], pts[k]);
+                    if dist <= radius {
+                        return Some(EdgeRef { polygon: i, edge: j }); // return konczy natychmiast
+                    }
                 }
             }
         }
@@ -283,9 +423,12 @@ impl Scene {
         //  | krawędzi sąsiednich
         poly.renumber_edges();
 
-        // TODO: poprawić self.constraints (po ostatnim użyciu `poly`):
-        //  - usunąć ograniczenia z krawędzią (polygon_id, edge_id)
-        //  - w pozostałych z tego wielokąta: edge > edge_id -> edge + 1
+        // AI-finished: ograniczenia (po ostatnim użyciu `poly`)
+        //  - usuwamy ograniczenia podzielonej krawędzi (polygon_id, edge_id)
+        //  - krawędzie za nią przesunęły się o 1 w prawo -> edge + 1
+        self.remove_constraints_with_edge(EdgeRef { polygon: polygon_id, edge: edge_id });
+        self.shift_constraint_edges(polygon_id, edge_id, 1);
+        self.solve(&[]);
     }
 
     pub fn remove_vertex(&mut self, polygon: usize, vertex_id: usize) {
@@ -302,9 +445,13 @@ impl Scene {
         poly.edges.remove(vertex_id);
         poly.renumber_edges();
 
-        // TODO: poprawić self.constraints (po ostatnim użyciu `poly`, stare numery krawędzi):
-        //  - usunąć ograniczenia z krawędzią (polygon, prev) lub (polygon, vertex_id)
-        //  - w pozostałych z tego wielokąta: edge > vertex_id -> edge - 1
+        // AI-finished: ograniczenia (po ostatnim użyciu `poly`, stare numery krawędzi)
+        //  - usuwamy ograniczenia obu krawędzi przy usuniętym wierzchołku
+        //  - krawędzie za usuniętą przesunęły się o 1 w lewo -> edge - 1
+        self.remove_constraints_with_edge(EdgeRef { polygon, edge: prev });
+        self.remove_constraints_with_edge(EdgeRef { polygon, edge: vertex_id });
+        self.shift_constraint_edges(polygon, vertex_id, -1);
+        self.solve(&[]);
     }
 
     pub fn set_bezier(&mut self, e_ref: EdgeRef) {
@@ -333,9 +480,37 @@ impl Scene {
         if self.polygons[e_ref.polygon].vertices[i2].kind == None {
             self.polygons[e_ref.polygon].vertices[i2].kind = Some(PointKind::C1);
         }
+
+        // AI-finished: prostopadłość dotyczy tylko odcinków, a C1 trzeba od razu wymusić
+        self.remove_constraints_with_edge(e_ref);
+        self.solve(&[]);
     }
     pub fn set_line(&mut self, e: EdgeRef) {
         self.polygons[e.polygon].edges[e.edge].kind = Line { len: None };
+        self.solve(&[]); // AI-finished: sąsiednie Béziery dopasowują się do nowego odcinka
+    }
+
+    // AI-finished: zamiana krawędzi na łuk okręgu
+    pub fn set_arc(&mut self, e: EdgeRef) {
+        self.remove_constraints_with_edge(e); // prostopadłość tylko dla odcinków
+        self.polygons[e.polygon].edges[e.edge].kind = EdgeKind::Arc { flip: false };
+
+        // łuk może mieć G1 tylko na jednym końcu -> jeśli oba są G1/C1, drugi koniec dostaje G0
+        let i1 = self.polygons[e.polygon].edges[e.edge].p1;
+        let i2 = self.polygons[e.polygon].edges[e.edge].p2;
+        if is_smooth(self.polygons[e.polygon].vertices[i1].kind)
+            && is_smooth(self.polygons[e.polygon].vertices[i2].kind)
+        {
+            self.polygons[e.polygon].vertices[i2].kind = Some(PointKind::G0);
+        }
+        self.solve(&[]);
+    }
+
+    // AI-finished: półokrąg na drugą stronę cięciwy (ma znaczenie tylko przy G0 na obu końcach)
+    pub fn flip_arc(&mut self, e: EdgeRef) {
+        if let EdgeKind::Arc { flip } = &mut self.polygons[e.polygon].edges[e.edge].kind {
+            *flip = !*flip;
+        }
     }
 
 }
@@ -372,4 +547,92 @@ impl Polygon {
         (a.pos, b.pos)
     }
 
+    // AI-finished: krawędź jako łamana (do rysowania i trafiania myszą)
+    //  - odcinek: 2 punkty
+    //  - Bézier:  steps + 1 punktów z algorytmu przyrostowego
+    //  - łuk:     steps + 1 punktów na okręgu
+    pub fn edge_polyline(&self, edge: usize, steps: usize) -> Vec<Point> {
+        let (a, b) = self.edge_points(edge);
+        match &self.edges[edge].kind {
+            EdgeKind::Line { .. } => vec![a, b],
+            EdgeKind::Bezier { c1, c2 } => bezier_points(&a, &b, c1, c2, steps),
+            EdgeKind::Arc { flip } => {
+                let i1 = self.edges[edge].p1;
+                let i2 = self.edges[edge].p2;
+                // G1 na początku: łuk styczny do krawędzi wchodzącej do początku
+                if is_smooth(self.vertices[i1].kind) {
+                    if let Some(t) = self.tangent_into(i1) {
+                        return arc_tangent_start(a, b, t, steps);
+                    }
+                }
+                // G1 na końcu: łuk styczny do krawędzi wychodzącej z końca
+                if is_smooth(self.vertices[i2].kind) {
+                    if let Some(t) = self.tangent_out_of(i2) {
+                        return arc_tangent_end(a, b, t, steps);
+                    }
+                }
+                // G0 na obu końcach: półokrąg, promień = połowa długości krawędzi
+                arc_semicircle(a, b, *flip, steps)
+            }
+        }
+    }
+
+    // AI-finished: kierunek, w jakim krawędź WCHODZĄCA dochodzi do wierzchołka v (styczna z lewej)
+    // Łuk jako sąsiad: uproszczenie -> kierunek jego cięciwy.
+    pub fn tangent_into(&self, v: usize) -> Option<Point> {
+        let n = self.vertices.len();
+        let e = &self.edges[(v + n - 1) % n];
+        let pos = self.vertices[v].pos;
+        let from = match &e.kind {
+            EdgeKind::Bezier { c1, c2 } => {
+                if (pos - *c2).length() > 1e-9 { *c2 } else { *c1 }
+            }
+            _ => self.vertices[e.p1].pos,
+        };
+        unit(pos - from)
+    }
+
+    // AI-finished: kierunek, w jakim krawędź WYCHODZĄCA opuszcza wierzchołek v (styczna z prawej)
+    pub fn tangent_out_of(&self, v: usize) -> Option<Point> {
+        let e = &self.edges[v];
+        let pos = self.vertices[v].pos;
+        let to = match &e.kind {
+            EdgeKind::Bezier { c1, c2 } => {
+                if (*c1 - pos).length() > 1e-9 { *c1 } else { *c2 }
+            }
+            _ => self.vertices[e.p2].pos,
+        };
+        unit(to - pos)
+    }
+
+    // AI-finished: czy przy wierzchołku jest Bézier / łuk (do panelu ciągłości)
+    pub fn neighbor_kinds(&self, v: usize) -> (bool, bool) {
+        let n = self.vertices.len();
+        let mut bezier = false;
+        let mut arc = false;
+        for e in [(v + n - 1) % n, v] {
+            match self.edges[e].kind {
+                EdgeKind::Bezier { .. } => bezier = true,
+                EdgeKind::Arc { .. } => arc = true,
+                EdgeKind::Line { .. } => {}
+            }
+        }
+        (bezier, arc)
+    }
+
+}
+
+// AI-finished: G1 i C1 to ciągłość "gładka" (wspólna styczna); G0 / brak -> tylko wspólny punkt
+pub fn is_smooth(kind: Option<PointKind>) -> bool {
+    kind == Some(PointKind::G1) || kind == Some(PointKind::C1)
+}
+
+// AI-finished: wektor jednostkowy (None dla wektora zerowego, bo nie ma kierunku)
+pub fn unit(v: Point) -> Option<Point> {
+    let l = v.length();
+    if l < 1e-9 {
+        None
+    } else {
+        Some(v * (1.0 / l))
+    }
 }
